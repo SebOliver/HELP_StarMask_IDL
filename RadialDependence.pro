@@ -1,24 +1,22 @@
-;.r star_artefacts_spike
-;.r star_artefacts_circle
+;----------------------------------------------------------------------
+; The HELP Star mask generation IDL code
+;----------------------------------------------------------------------
 
+;----------------------------------------------------------------------
+; some generic plotting
 ;----------------------------------------------------------------------
 
 
 
 
-set_plot_ps,'xmm_star_analysis_general.ps'
-colours
+
 starcat=mrdfits('./xmm_lss_star_match_all_120.fits',1)
-;starcat=mrdfits('./xmm_lss_star_match_r9_480.fits',1)
 
 ;----------------------------------------------------------------------
 ; key parameters 
 ;----------------------------------------------------------------------
 
-frac=0.1        ; fraction of maximum radius used as anulus with for bacground determination
-reliability=0.8 ; reliabilty target for objects at boundaries of star mask
-snr=3.          ; SNR threshold for determining that boundary
-
+field_string='xmm_lss'
 
 ;----------------------------------------------------------------------
 ; things that we are expecting to find in starcat structure
@@ -26,7 +24,7 @@ snr=3.          ; SNR threshold for determining that boundary
 ;  starcat is a cross match between a reference star catalogue
 ;  e.g. Gaia and a catalogue of objects which includes artefacts that
 ;  we are trying to mask out
-; 
+;
 ;  star_id: an identifier for the reference star should be 1-N where N
 ;  is number of stars in this cross-match
 ;
@@ -59,42 +57,21 @@ nstars=max(star_id)
 ;----------------------------------------------------------------------
 ; Basic diagnostic plots
 ;----------------------------------------------------------------------
-
-; these plots have too many points in to be useful
-
-;plot,starcat.separation,starcat.theta,psym=3,xtitle='R',ytitle='Theta'
-;plot,starcat.dra,starcat.ddec,psym=3,xtitle='DRA',ytitle='DDEC' 
+set_plot_ps,field_string+'_star_analysis_general.ps'
+colours
 
 ;----------------------------------------------------------------------
 ; 2D histogram of the radial and transverse components plotted in
-; image and contours (not very useful it seems)
+; image  (contours didn't work very well, might be better
+; things you could do with kenerl density estimators, but this is not
+; used in masking)
 ;----------------------------------------------------------------------
 
 h2d = HIST_2D(starcat.separation^2,starcat.theta, bin1=200, bin2=4,min1=0,max1=120^2,min2=-180,max2=180)
 icplot,h2d
 
-contour,h2d,levels=[10,20,30,40,50]
-contour,alog10(h2d)
-
 ;----------------------------------------------------------------------
-; this part does an angular projection
-;----------------------------------------------------------------------
-
-h=histogram(starcat.theta,location=x)
-plot,x,h,/ys,xtitle='!7h',ytitle='!17Counts'
-oplot,!x.crange,median(h)*[1,1]
-moms=moment(h)
-oplot,!x.crange,moms[0]*[1,1]
-oplot,!x.crange,(moms[0]+2*sqrt(moms[1]))*[1,1]
-theta_spike=[-135.0,-90.0,-45,0,+45,+90,135,180]
-width_spike=replicate(1.8,n_elements(theta_spike)) ; width is 3*sigma of a Gaussian fit to spike profile.
-
-scale_spike=fltarr(n_elements(theta_spike))
-
-for i=0,n_elements(theta_spike)-1 do  oplot,[1,1]*theta_spike[i],!y.crange,lines=1,colo=2
-
-;----------------------------------------------------------------------
-; Normal  Dra,Ddec plot  
+; Normal  Delta RA, Delta Dec plot  
 ;----------------------------------------------------------------------
 
 
@@ -103,18 +80,56 @@ icplot,h2d
 contour,h2d,levels=[10,20,30,40,50]
 contour,alog10(h2d)
 
-
 endps
 
 ;----------------------------------------------------------------------
+; this part does an angular projection which is where I (by hand)
+; define the angles I want to work with 
+;----------------------------------------------------------------------
+set_plot_ps,field_string+'_star_spike_theta_all.ps'
+
+h=histogram(starcat.theta,location=x)
+
+plot,x,h,/ys,xtitle='!7h',ytitle='!17Counts'
+oplot,!x.crange,median(h)*[1,1]
+moms=moment(h)
+oplot,!x.crange,moms[0]*[1,1]
+oplot,!x.crange,(moms[0]+2*sqrt(moms[1]))*[1,1]
+
+
+theta_spike=[-135.0,-90.0,-45,0,+45,+90,135,180]
+width_spike=replicate(1.8,n_elements(theta_spike)) ; width is 3*sigma of a Gaussian fit to spike profile.
+
+scale_spike=fltarr(n_elements(theta_spike))
+
+for i=0,n_elements(theta_spike)-1 do  oplot,[1,1]*theta_spike[i],!y.crange,lines=1,colo=2
+
+
+endps
+
+
+;----------------------------------------------------------------------
+; setting up output file to capture results
+;----------------------------------------------------------------------
+
+get_lun,unit
+openw,unit,field_string+'_analysis_data.txt'
+
+
+;----------------------------------------------------------------------
+;----------------------------------------------------------------------
 ; now looping around magnitude bins
 ;----------------------------------------------------------------------
-get_lun,unit
-openw,unit,'xmm_analysis_range.txt'
+;----------------------------------------------------------------------
+
+
+; setting up the magnitude limits and a string to be used in plot titles
 mag_min=[10,6,7,8,9,10,11]
 mag_max=[12,7,8,9,10,11,12]
-x_min=[100,100,50,40,30,20]
-x_max=[200,200,70,60,50,40]
+
+
+; setting up some arrays to store values calculated in subroutine calls
+
 limits_circle=fltarr(n_elements(mag_min))
 zero_circle=fltarr(n_elements(mag_min))
 hole_circle=fltarr(n_elements(mag_min))
@@ -123,107 +138,142 @@ limits_spike=fltarr(n_elements(theta_spike),n_elements(mag_min))
 nstars_arr=fltarr(n_elements(mag_min))
 
 for i=0,n_elements(mag_min)-1 do begin 
-;   k=k0
-;   c=c0
+
+;----------------------------------------------------------------------
+; reading in files (different for different magnitude ranges as we
+; used a larger search radius for brighter stars)
+;----------------------------------------------------------------------
+
    if mag_max[i] gt 9. then starcat=mrdfits('./xmm_lss_star_match_all_120.fits',1) $
    else starcat=mrdfits('./xmm_lss_star_match_r9_480.fits',1) 
 
+;----------------------------------------------------------------------
+; creating a string to use for plots
+;----------------------------------------------------------------------
+
+   title='!17'+string(mag_min[i],format='(i2)')+'!7<!17R!7<!17'+string(mag_max[i],format='(i2)')
+
+;----------------------------------------------------------------------
+; constructing the relevant sub-sample and (since this is a
+; cross-matched catalogue of star-object pairs) re-constructing the
+; list of unique stars
+;----------------------------------------------------------------------
+
    samp=where(starcat.rmag le mag_max[i] and starcat.rmag ge mag_min[i] )
+
 ; tycho IDS
 ty=starcat[samp].tyc2
 ; unique list of tycho ids
 uni=uniq(ty,sort(ty))
-; count number of stars used
+; then count number of stars used
 nstars=n_elements(uni)
 nstars_arr[i]=nstars
 
 ;----------------------------------------------------------------------
-; this is the code we are going to replace with a sub-routine
+; This routine defines the central hole and artefact model for each
+; magnitude bin
 ;----------------------------------------------------------------------
 
- 
- title='!17'+string(mag_min[i],format='(i2)')+'!7<!17R!7<!17'+string(mag_max[i],format='(i2)')
+set_plot_ps,field_string+'_star_analysis_circle'+string(mag_min[i],format='(i2.2)')+'-'+string(mag_max[i],format='(i2.2)')+'.ps'
 
-h=histogram(starcat[samp].separation,bin=1,min=0.,location=x)
-
-y=h/(2*!pi*x)/nstars
-
-
-;----------------------------------------------------------------------
-;----------------------------------------------------------------------
-
-  
-;----------------------------------------------------------------------
-set_plot_ps,'xmm_star_analaysis_circle'+string(mag_min[i],format='(i2.2)')+'-'+string(mag_max[i],format='(i2.2)')+'.ps'
 star_artefacts_circle, starcat[samp],nstars,title, circle_fit_params,limit,zero,hole_x,x_min=x_min,x_max=x_max
-endps
-;----------------------------------------------------------------------
 
-printf,unit,'Range:',x_min,x_max
+; storing the output
 limits_circle[i]=limit
 zero_circle[i]=zero
 hole_circle[i]=hole_x
 
-; doing the azimuthal bit of the stellar diffraction spike finding
-; (only for wide range of magnitudes, should be common across all)
+endps
 
-
+;----------------------------------------------------------------------
+; doing the azimuthal modelling of the spike positions, widths and
+; profiles we only do this with a relatively large bin in magnitudes
+; which give enough signal-to-noise ratio to do this. All we are
+; looking for is the position and width of the spike and the peak
+; hight of the spike relative to the level of artefacts not in the
+; spike. Hopefully this applies reasonably well at all mags.
+;
+; it might make more logical sense to have this outside the loop but
+; as it relies on the radial profile calculated above it would
+; generate lots of extra code to move it outside
+;----------------------------------------------------------------------
 
 if i eq 0 then begin 
-   set_plot_ps,'xmm_star_analaysis_spike_azimuthal.ps'+string(mag_min[i],format='(i2.2)')+'-'+string(mag_max[i],format='(i2.2)')+'.ps'
+
+   set_plot_ps,field_string+'_star_analaysis_spike_azimuthal.ps'+string(mag_min[i],format='(i2.2)')+'-'+string(mag_max[i],format='(i2.2)')+'.ps'
+
    for j=0,n_elements(theta_spike) -1 do begin 
+
+; setting up the initial parameters
       width=width_spike[j]
       theta=theta_spike[j]
       ang_fit_params=[1,theta,width/3.,0,0]
+
+; this is the important subroutine (note that we are using the
+; circular fit to the artefacts to define the background level)
+
       star_artefacts_spike_azimuthal, starcat[samp], nstars,title,ang_fit_params,$
                             back=circle_fit_params[2],status=status,scale
+ 
+; storing the returned values in arrays 
       scale_spike[j]=scale
-      spike_fit_params=circle_fit_params
-      spike_fit_params[0]=spike_fit_params[0]*scale
-      limits_spike[j,i]= star_artefacts_threshold(spike_fit_params, reliability=relibaility)
-
- ;     stop
       theta_spike[j]=ang_fit_params[1]
       width_spike[j]=ang_fit_params[2]*3.
 
+ 
    endfor
    endps
-print,theta_spike,format='(6f6.1)'
-print,width_spike,format='(6f6.1)'
 
-;stop
 
+printf,unit,theta_spike,format='(6f6.1)'
+printf,unit,width_spike,format='(6f6.1)'
+printf,unit,scale_spike,format='(6f6.1)'
+
+;----------------------------------------------------------------------
+
+; closing the check on whether we are using the big bright bin
 endif
 
+;----------------------------------------------------------------------
+; using the scaling of the spike amplitudes and the radial profile of
+; all pairs to build a model of the radial profile of each spike and
+; hence a threshold radius
+;----------------------------------------------------------------------
+
 for j=0,n_elements(theta_spike) -1 do begin 
-   width=2.0
-   theta=theta_spike[j]
-   spike_fit_params=circle_fit_params
+
+; creating a model for the spike radial profile based on the circular model
+; but scaled up by a the hight of the spike relative to artefacts
+      spike_fit_params=circle_fit_params
       spike_fit_params[0]=spike_fit_params[0]*scale_spike[j]
-      limits_spike[j,i]= star_artefacts_threshold(spike_fit_params, reliability=relibility)
+      limits_spike[j,i]= star_artefacts_threshold(spike_fit_params, reliability=relibaility)
 
 endfor
 
 endfor
 
-; closing the text file
-close,unit
-free_lun,unit
 
 ;----------------------------------------------------------------------
 ; linear fitting of magnitude trends
 ;----------------------------------------------------------------------
+
 mag=(mag_min+mag_max)/2.
 temp=linfit(mag,alog10(limits_circle))
 faint=where (mag gt 8.)
 temp2=linfit(mag[faint],alog10(hole_circle[faint]*10))
 
+;----------------------------------------------------------------------
+; closing the text file
+;----------------------------------------------------------------------
+
+close,unit
+free_lun,unit
 
 ;----------------------------------------------------------------------
 ; summary plots
 ;----------------------------------------------------------------------
 
-set_plot_ps,'xmm_star_analysis_summary.ps'
+set_plot_ps,field_string+'_star_analysis_summary.ps'
 
 ;----------------------------------------------------------------------
 ; plotting the circular radius vs magnitude

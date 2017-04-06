@@ -1,7 +1,4 @@
-source ~/.login
-source ~/.cshrc
 
-idl 
 .r star_artefacts_circle
 
 .r star_artefacts_circle

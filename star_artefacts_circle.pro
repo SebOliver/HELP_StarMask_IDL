@@ -1,16 +1,3 @@
-function star_artefacts_threshold, fit_params, reliability=relibaility
-;
-; this takes the fit paramameters from a function y=a0*a1^x+a2 and
-; calculates where the function 
-
-if not keyword_set(reliability) then reliability=0.8
-
-limit=(alog(fit_params[2]*(1./reliability-1.))-alog(fit_params[0]))/alog(fit_params[1])
-
-return,limit
-
-end
-
 
 pro star_artefacts_circle, starcat, nstars,title, fit_params, limit, zero, hole_x, x_min=x_min,x_max=x_max
 
@@ -27,7 +14,10 @@ pro star_artefacts_circle, starcat, nstars,title, fit_params, limit, zero, hole_
 ;
 ;----------------------------------------------------------------------
 
-reliability=0.8    ; reliabilty target for objects at boundaries of star mask (this is a key parameter which 
+reliability=0.8    ; reliabilty target for objects at boundaries of star mask (this is a key parameter which ultimately defines how far down the radial density profile we go
+
+; these next parameters are used to define the bin widths using in
+; density estimation and are thus not critical
 
 frac=0.1           ; first guess of fraction of maximum radius used as anulus with for background determination
 snr=10.            ; SNR threshold for determining that boundary (only required for range definition)
@@ -42,16 +32,17 @@ rmax=max(starcat.separation)
 
 ; hardwire in first guess a annulus width as a fraction of the rmax
 for i=0,1 do begin 
+
    dr=frac*rmax
    rmin=(1.-frac)*rmax 
    
-; area of annulus
+; area of this annulus
    omega0=!pi*(rmax^2-rmin^2)
    
    
-; background calculation (overall)
+; background calculation 
    back_region=where(starcat.separation ge rmin, back_count)
-   back0=back_count/nstars/omega0 ; in sources per star per sq arc^2
+   back0=back_count/nstars/omega0 ; density in sources per star per sq arc^2
    
 ; what we really want is an omega such that back0*omega is high enough
 ; to be measured to better than (say) 3% accuracy, i.e. about 200
